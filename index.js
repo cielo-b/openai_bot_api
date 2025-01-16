@@ -125,29 +125,39 @@ const openai = new OpenAI({
 
 // Route to handle chatbot requests
 app.post('/chat', async (req, res) => {
-  const userMessage = req.body.message;
+  const { message, image } = req.body;
 
-  if (!userMessage) {
+  if (!message) {
     return res.status(400).json({ error: 'Message is required' });
   }
 
   try {
-    const response = await openai.chat.completions.create({
+    const textResponse = await openai.chat.completions.create({
       model: 'gpt-4',
       messages: [
-        { role: 'system', content: 'You are an all-knowing assistant who answers any question, whether about health, medicines, technology, or general knowledge.' },
-        { role: 'user', content: userMessage },
+        { role: 'system', content: 'You are a knowledgeable assistant that understands Kinyarwanda and provides image analysis insights.' },
+        { role: 'user', content: message },
       ],
     });
 
-    console.log(response?.choices?.[0]?.message?.content);
-    const chatbotReply = response?.choices?.[0]?.message?.content;
-    res.json({ response: chatbotReply });
+    const imageAnalysis = image
+      ? await someImageAnalysisFunction(image) // Use your image model here
+      : null;
+
+    res.json({
+      textResponse: textResponse?.choices?.[0]?.message?.content,
+      imageAnalysis,
+    });
   } catch (error) {
-    console.error('Error communicating with OpenAI:', error.message);
+    console.error('Error:', error.message);
     res.status(500).json({ error: 'An error occurred. Please try again.' });
   }
 });
+
+async function someImageAnalysisFunction(imageData) {
+  // Example: Analyze the image using a pre-trained model
+  return 'Image analysis results here'; // Replace with actual implementation
+}
 
 // Start the server
 app.listen(port, () => {
