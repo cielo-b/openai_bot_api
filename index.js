@@ -1,112 +1,12 @@
-// const express = require('express');
-// const bodyParser = require('body-parser');
-// const OpenAI = require('openai');
-// const { sequelize } = require('./database'); // Assuming only sequelize is used
-// const cors = require('cors');
-// require('dotenv').config();
+import express from 'express';
+import bodyParser from 'body-parser';
+import OpenAI from 'openai';
+import cors from 'cors';
+import { franc } from 'franc';
+import {iso6393} from 'iso-639-3';
+import dotenv from 'dotenv';
 
-// const app = express();
-// app.use(cors());
-// app.use(bodyParser.json());
-
-// const openai = new OpenAI({
-//     apiKey: process.env.OPENAI_API_KEY,
-// });
-
-// app.post('/chat', async (req, res) => {
-//     const userInput = req.body.message;
-
-//     try {
-//         // Step 1: Classify Intent
-//         const intentResponse = await openai.chat.completions.create({
-//             model: 'gpt-3.5-turbo',
-//             messages: [
-//                 { role: 'system', content: 'Classify the user input as "report", "chat", or "unknown".' },
-//                 { role: 'user', content: userInput },
-//             ],
-//             max_tokens: 10,
-//         });
-
-//         const intent = intentResponse.choices?.[0]?.message?.content?.trim().toLowerCase();
-
-//         if (intent === 'report') {
-//             try {
-//                 // Step 2: Generate SQL Query
-//                 const sqlResponse = await openai.chat.completions.create({
-//                     model: 'gpt-3.5-turbo',
-//                     messages: [
-//                         { role: 'system', content: 'Generate a SQL query based on the schema provided.' },
-//                         {
-//                             role: 'user',
-//                             content: `Database schema:
-//                                 1. Patients (id, name, age, gender)
-//                                 2. Diagnoses (id, PatientId, DiseaseId, diagnosis_date)
-//                                 3. Diseases (id, name)
-
-//                                 User query: "${userInput}"`,
-//                         },
-//                     ],
-//                     max_tokens: 150,
-//                 });
-
-//                 let sqlQuery = sqlResponse.choices?.[0]?.message?.content?.trim();
-//                 sqlQuery = sqlQuery.replace(/```sql|```/g, '').trim(); // Clean up markdown
-
-//                 // Execute SQL query
-//                 const [results] = await sequelize.query(sqlQuery);
-
-//                 if (results.length > 0) {
-//                     return res.json({ success: true, intent, data: results });
-//                 } else {
-//                     throw new Error('No data found for the given query.');
-//                 }
-//             } catch (dbError) {
-//                 console.error('Database Query Error:', dbError);
-//                 const fallbackResponse = await openai.chat.completions.create({
-//                     model: 'gpt-3.5-turbo',
-//                     messages: [
-//                         { role: 'system', content: 'Provide a general health-related answer or tips.' },
-//                         { role: 'user', content: userInput },
-//                     ],
-//                     max_tokens: 150,
-//                 });
-
-//                 return res.json({
-//                     success: true,
-//                     intent,
-//                     message: fallbackResponse.choices?.[0]?.message?.content?.trim(),
-//                 });
-//             }
-//         } else {
-//             // Step 3: General Chat Response
-//             const chatResponse = await openai.chat.completions.create({
-//                 model: 'gpt-3.5-turbo',
-//                 messages: [
-//                     { role: 'system', content: 'Provide a general health-related answer or tips.' },
-//                     { role: 'user', content: userInput },
-//                 ],
-//                 max_tokens: 150,
-//             });
-
-//             return res.json({ success: true, intent, message: chatResponse.choices?.[0]?.message?.content?.trim() });
-//         }
-//     } catch (error) {
-//         console.error('Error:', error);
-//         res.status(500).json({ success: false, message: 'An unexpected error occurred. Please try again later.' });
-//     }
-// });
-
-// // Start server
-// const PORT = process.env.PORT || 3000;
-// app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-
-
-
-const express = require('express');
-const bodyParser = require('body-parser');
-const OpenAI = require('openai');
-const cors = require('cors');
-require('dotenv').config();
+dotenv.config();
 
 const app = express();
 const port = 3000;
@@ -119,45 +19,85 @@ app.use(bodyParser.json());
 
 // Configure OpenAI
 const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
+
+const detectLanguage = async (text) => {
+  const langCode = franc(text); // Detect the language
+  const language = iso6393.find((lang) => lang.iso6393 === langCode);
+  return language ? language.name : 'English'; // Default to English if not detected
+};
+
+// Helper Function: Generate AI response
+const generateChatResponse = async (message, language) => {
+  try {
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4',
+      messages: [
+        {
+          role: 'system',
+          content: `You are a healthcare assistant. Respond in the language of the user in either English or French or Kinyarwanda according to the input language.
+          you are also a knowledgeable and friendly assistant specializing in health and medical services. You can:
+          1. Recommend over-the-counter medicines for common ailments (e.g., fever, cold, headache).
+          2. Suggest suitable tests or procedures based on symptoms.
+          3. Advise users on when to seek medical attention.
+          4. Provide health tips and suggestions in multiple languages for accessibility.
+          Note: Always encourage users to consult a professional for serious or persistent issues.`,
+        },
+        { role: 'user', content: message },
+      ],
+    });
+    return response?.choices?.[0]?.message?.content || 'Sorry, I couldn’t process your request at the moment.';
+  } catch (error) {
+    console.error('Error while generating AI response:', error.message);
+    throw new Error('AI service is currently unavailable.');
+  }
+};
 
 // Route to handle chatbot requests
 app.post('/chat', async (req, res) => {
   const { message, image } = req.body;
 
+  // Validate input
   if (!message) {
-    return res.status(400).json({ error: 'Message is required' });
+    return res.status(400).json({ error: 'Message field is required.' });
   }
 
   try {
-    const textResponse = await openai.chat.completions.create({
-      model: 'gpt-4',
-      messages: [
-        { role: 'system', content: 'You are a knowledgeable assistant that understands Kinyarwanda and provides image analysis insights.' },
-        { role: 'user', content: message },
-      ],
-    });
+    const detectedLanguage = await detectLanguage(message);
+    console.log('Detected Language:', detectedLanguage);
+    // Handle text message
+    const textResponse = await generateChatResponse(message, detectedLanguage);
 
-    const imageAnalysis = image
-      ? await someImageAnalysisFunction(image) // Use your image model here
-      : null;
+    // Placeholder for handling image input if required in the future
+    if (image) {
+      console.log('Image processing is not implemented yet.');
+    }
 
-    res.json({
-      textResponse: textResponse?.choices?.[0]?.message?.content,
-      imageAnalysis,
+    // Respond with AI output
+    res.status(200).json({
+      success: true,
+      language: detectedLanguage,
+      response: textResponse,
     });
   } catch (error) {
-    console.error('Error:', error.message);
-    res.status(500).json({ error: 'An error occurred. Please try again.' });
+    console.error('Error in /chat route:', error.message);
+    res.status(500).json({
+      success: false,
+      error: 'An error occurred while processing your request. Please try again later.',
+    });
   }
 });
 
-async function someImageAnalysisFunction(imageData) {
-  // Example: Analyze the image using a pre-trained model
-  return 'Image analysis results here'; // Replace with actual implementation
-}
+// Global error handler
+app.use((err, req, res, next) => {
+  console.error('Global Error:', err.stack);
+  res.status(500).json({
+    success: false,
+    error: 'Something went wrong on the server. Please try again later.',
+  });
+});
 
 // Start the server
 app.listen(port, () => {

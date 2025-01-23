@@ -1,8 +1,11 @@
 {
+  "type": "module",
   "dependencies": {
     "body-parser": "^1.20.3",
     "cors": "^2.8.5",
     "express": "^4.21.2",
+    "franc": "^6.2.0",
+    "iso-639-3": "^3.0.1",
     "natural": "^8.0.1",
     "openai": "^4.78.1",
     "pg": "^8.13.1",
